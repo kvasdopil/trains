@@ -33,6 +33,23 @@ Related documents:
 - `yarn deploy` deploys to production (`vercel --prod`).
 - Always run `yarn lint:full` and `yarn build` first; the remote build runs the same `yarn build` and fails on the same errors.
 
+## Production domain
+
+- Vercel project: `rails-dispatcher` (team `silly-goose-tech`), linked from this directory on 2026-10-11.
+- Custom domain: `trains.guskov.dev`, attached with `vercel domains add trains.guskov.dev rails-dispatcher`.
+- DNS for `guskov.dev` is Google Cloud DNS (`ns-cloud-d1..d4.googledomains.com`), managed outside Vercel. The domain needs one record:
+
+  `A trains.guskov.dev 76.76.21.21`
+
+  With the gcloud CLI authenticated against the project that owns the zone:
+
+  ```bash
+  ZONE=$(gcloud dns managed-zones list --filter='dnsName=guskov.dev.' --format='value(name)')
+  gcloud dns record-sets create trains.guskov.dev. --zone="$ZONE" --type=A --ttl=300 --rrdatas=76.76.21.21
+  ```
+
+  Then `vercel domains verify trains.guskov.dev`; Vercel issues the certificate automatically once the record resolves.
+
 ## Rollback
 
 Use `vercel rollback` (or promote a previous deployment in the dashboard); every deployment is immutable.
