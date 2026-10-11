@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rails Dispatcher</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="brand">Rails Dispatcher</div>
+        <div class="stats">
+          <div class="stat"><span class="label">Score</span><span id="score">0</span></div>
+          <div class="stat"><span class="label">Trains</span><span id="progress">0 / 0</span></div>
+        </div>
+        <div class="controls">
+          <button id="btn-pause" type="button" title="Space">Pause</button>
+          <button id="btn-speed" type="button">1x</button>
+          <button id="btn-restart" type="button">Restart</button>
+        </div>
+        <div id="panel-toggles">
+          <button class="panel-toggle" type="button" data-panel="timetable">Timetable</button>
+          <button class="panel-toggle" type="button" data-panel="log">Log</button>
+        </div>
+      </header>
+      <main id="layout">
+        <section id="stage"></section>
+        <aside id="sidebar" class="hidden" data-panel="none">
+          <ul id="timetable" class="list"></ul>
+          <ul id="log" class="list log"></ul>
+        </aside>
+      </main>
+      <div id="overlay" class="hidden">
+        <div class="card">
+          <h1 id="overlay-title">Shift complete</h1>
+          <p id="overlay-body"></p>
+          <button id="overlay-restart" type="button">Start new shift</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
