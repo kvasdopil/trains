@@ -17,7 +17,7 @@ Open [http://localhost:5173](http://localhost:5173).
 - Click a signal head to hold it at red (orange frame); click again to release. Hold a train's starter until its exit route through the crossover is set.
 - Red = section ahead occupied or route not set, yellow = next signal red, green = clear. Switches lock (orange) while a train occupies them or holds a route through them.
 - Through trains (violet, booked `T`) must never stop; the centre line is fastest, but any platform works at reduced speed.
-- `+100` for the booked track, `-50` for the wrong one, `-50` for the wrong exit, `-2` per second of lateness beyond a short grace. Space pauses; the speed button cycles 1x/2x/4x.
+- You earn money, shown as `+$` coming off each train: `$100` as passengers unload at the booked platform (half at a wrong one), `$100` for a through train running through. A stopping train that misses its stop, or any train leaving by the wrong exit, refunds the full `$100` fare, and a late train costs `$2` every second beyond a short grace. Space pauses; the speed button cycles 1x/2x/4x.
 
 ## Scripts
 
@@ -77,7 +77,7 @@ To deploy on every push instead, import the GitHub repository in the Vercel dash
 
 ## Stack
 
-TypeScript, Vite, PixiJS 8 for the station canvas, plain DOM for the HUD, ESLint (typescript-eslint, type-checked), Prettier, Vitest.
+TypeScript, Vite, PixiJS 8 for the station canvas, plain DOM for the HUD, GSAP for the money animations, ESLint (typescript-eslint, type-checked), Prettier, Vitest.
 
 ## Project layout
 

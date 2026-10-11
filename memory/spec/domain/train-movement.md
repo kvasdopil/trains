@@ -35,7 +35,7 @@ If the walk reaches the exit there is no stop target.
 ## Through trains
 
 - A train booked for a through track never stops at a platform; it may be routed via the through line or via any platform.
-- While a through train is on a platform edge its speed limit drops to 45% of its maximum, and it brakes ahead of the platform so it enters at that speed; routing via a platform costs time, not points.
+- While a through train is on a platform edge its speed limit drops to 45% of its maximum, and it brakes ahead of the platform so it enters at that speed; routing via a platform costs time, not money.
 - Entering a through track sets the train's `viaThrough` flag and logs a `passing` event (marked incorrect only for a stopping train, which is missing its stop); a through train entering a platform logs a `passing` event marked correct.
 
 ## Dwell and departure
@@ -46,4 +46,4 @@ If the walk reaches the exit there is no stop target.
 
 ## Exit
 
-- Once the head runs off the exit edge the train keeps moving; it is removed and scored when the tail clears the exit edge.
+- Once the head runs off the exit edge the train keeps moving; it is removed and settled when the tail clears the exit edge.

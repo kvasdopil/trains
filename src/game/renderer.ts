@@ -1,3 +1,4 @@
+import { gsap } from 'gsap';
 import { Circle, Container, Graphics, Text } from 'pixi.js';
 
 import type { EdgeGeometry, TrackGraph } from '../core/graph';
@@ -40,6 +41,8 @@ export const COLORS = {
   text: 0x94a3b8,
   textBright: 0xe2e8f0,
   trainHead: 0xf8fafc,
+  moneyUp: 0x4ade80,
+  moneyDown: 0xf87171,
 } as const;
 
 const DESTINATION_COLORS: Record<TrackId, number> = {
@@ -70,6 +73,8 @@ const QUEUE_ETA_HEIGHT = 70;
 /** A pending pill starts sliding down this many seconds before its train is due. */
 const QUEUE_HORIZON_SECONDS = 90;
 const QUEUE_LEFT_INSET = 24;
+/** Money popups never start closer than this to the stage edge. */
+const MONEY_EDGE_INSET = 14;
 
 const aspectColor = (aspect: Aspect | undefined): number => {
   switch (aspect) {
@@ -107,6 +112,9 @@ export class StationRenderer {
   private readonly trainLabels = new Map<string, Text>();
   private readonly queueLayer = new Graphics();
   private readonly queueLabels: Text[] = [];
+  private readonly moneyLayer = new Container();
+  /** Index of the first simulation event not yet turned into a money popup. */
+  private eventCursor = 0;
 
   constructor(graph: TrackGraph, handlers: RendererHandlers) {
     this.graph = graph;
@@ -118,6 +126,7 @@ export class StationRenderer {
       this.trainLayer,
       this.queueLayer,
       this.labelLayer,
+      this.moneyLayer,
       this.hitLayer,
     );
     this.drawStatic();
@@ -132,6 +141,7 @@ export class StationRenderer {
     this.drawSignals(sim);
     this.drawTrains(sim);
     this.drawUpcoming(sim);
+    this.spawnMoneyPopups(sim);
   }
 
   /** Forget cached per-train display objects (call when a new simulation starts). */
@@ -139,6 +149,12 @@ export class StationRenderer {
     for (const label of this.trainLabels.values()) label.destroy();
     this.trainLabels.clear();
     for (const label of this.queueLabels) label.visible = false;
+    this.eventCursor = 0;
+    for (const popup of [...this.moneyLayer.children]) {
+      gsap.killTweensOf(popup);
+      gsap.killTweensOf(popup.scale);
+      popup.destroy();
+    }
   }
 
   // ---------------------------------------------------------------------------------------
@@ -512,6 +528,7 @@ export class StationRenderer {
       });
     }
     const shown = pills.slice(0, chain.length + QUEUE_MAX_PENDING);
+    const hidden = pills.length - shown.length;
 
     // Approach track: a vertical line with one block signal dot per section boundary.
     const trackX = x - 10;
@@ -531,7 +548,7 @@ export class StationRenderer {
     labelIndex += 1;
     header.anchor.set(0, 0.5);
     header.style.fill = COLORS.text;
-    header.text = shown.length > 0 ? 'NEXT' : 'NO MORE TRAINS';
+    header.text = hidden > 0 ? `+${hidden} MORE` : shown.length > 0 ? 'NEXT' : 'NO MORE TRAINS';
     header.position.set(x, Math.min(etaTop, ...shown.map((p) => p.y)) - QUEUE_HEIGHT - 8);
     header.visible = true;
 
@@ -571,5 +588,123 @@ export class StationRenderer {
       const label = this.queueLabels[i];
       if (label) label.visible = false;
     }
+  }
+
+  // ---------------------------------------------------------------------------------------
+
+  /** Turn new money events into floating `+$` / `-$` labels that leave the train. */
+  private spawnMoneyPopups(sim: Simulation): void {
+    const { events } = sim;
+    let burst = 0;
+    for (; this.eventCursor < events.length; this.eventCursor += 1) {
+      const event = events[this.eventCursor];
+      if (event?.kind !== 'money') continue;
+      if (event.reason === 'wrong-exit' || event.reason === 'missed-stop') {
+        const origin = this.exitEdgePoint(event.exit);
+        if (origin) this.wrongExitPopup(event.amount, origin, burst);
+        burst += 1;
+        continue;
+      }
+      const train = sim.trains.find((t) => t.id === event.train);
+      if (!train) continue;
+      const points = this.trainPolyline(train);
+      const origin =
+        event.reason === 'late' ? points[points.length - 1] : this.randomPointOn(points);
+      if (origin) this.risingPopup(event.amount, this.clampToStage(origin));
+    }
+  }
+
+  private moneyText(amount: number): Text {
+    const text = new Text({
+      text: amount >= 0 ? `+$${amount}` : `-$${-amount}`,
+      style: {
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        fontSize: 13,
+        fontWeight: 'bold',
+        fill: amount >= 0 ? COLORS.moneyUp : COLORS.moneyDown,
+        stroke: { color: COLORS.background, width: 3 },
+      },
+    });
+    text.anchor.set(0.5);
+    this.moneyLayer.addChild(text);
+    return text;
+  }
+
+  /** A coin label that pops off the train and floats up while fading out. */
+  private risingPopup(amount: number, origin: Point): void {
+    const text = this.moneyText(amount);
+    text.position.set(origin.x, origin.y - 8);
+    text.scale.set(0.4);
+    gsap.to(text.scale, { x: 1, y: 1, duration: 0.25, ease: 'back.out(3)' });
+    gsap.to(text, {
+      y: origin.y - 44 - Math.random() * 10,
+      x: origin.x + (Math.random() - 0.5) * 14,
+      duration: 1.3,
+      ease: 'power2.out',
+    });
+    gsap.to(text, {
+      alpha: 0,
+      duration: 0.5,
+      delay: 0.8,
+      ease: 'power1.in',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  /** A refund label that flies back into the station from the exit point the train crosses. */
+  private wrongExitPopup(amount: number, origin: Point, index: number): void {
+    const text = this.moneyText(amount);
+    const inward = origin.x >= STAGE_WIDTH / 2 ? -1 : 1;
+    text.position.set(origin.x, origin.y);
+    text.alpha = 0;
+    text.scale.set(1.3);
+    const delay = index * 0.09;
+    gsap.to(text, { alpha: 1, duration: 0.12, delay });
+    gsap.to(text.scale, { x: 1, y: 1, duration: 0.4, delay, ease: 'power2.out' });
+    gsap.to(text, {
+      x: origin.x + inward * (50 + Math.random() * 70),
+      y: origin.y + (Math.random() - 0.5) * 70,
+      duration: 1.1,
+      delay,
+      ease: 'power3.out',
+    });
+    gsap.to(text, {
+      alpha: 0,
+      duration: 0.5,
+      delay: delay + 1,
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  /** The exit point: the far end of the exit track, where trains leave the layout. */
+  private exitEdgePoint(exitId: string | undefined): Point | undefined {
+    const exit = this.graph.layout.exits.find((x) => x.id === exitId);
+    if (!exit) return undefined;
+    return this.clampToStage(this.graph.edge(exit.edge).b);
+  }
+
+  private clampToStage(p: Point): Point {
+    return {
+      x: Math.min(STAGE_WIDTH - MONEY_EDGE_INSET, Math.max(MONEY_EDGE_INSET, p.x)),
+      y: Math.min(STAGE_HEIGHT - MONEY_EDGE_INSET, Math.max(MONEY_EDGE_INSET, p.y)),
+    };
+  }
+
+  /** A uniformly random point along a polyline (the train body). */
+  private randomPointOn(points: Point[]): Point | undefined {
+    const segments = points.slice(1).map((b, i) => {
+      const a = points[i] ?? b;
+      return { a, b, length: Math.hypot(b.x - a.x, b.y - a.y) };
+    });
+    const total = segments.reduce((sum, seg) => sum + seg.length, 0);
+    let r = Math.random() * total;
+    for (const seg of segments) {
+      if (r <= seg.length && seg.length > 0) {
+        const t = r / seg.length;
+        return { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t };
+      }
+      r -= seg.length;
+    }
+    return points[points.length - 1];
   }
 }

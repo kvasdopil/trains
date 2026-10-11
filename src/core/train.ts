@@ -60,6 +60,18 @@ export class Train {
   /** True once the head has run off the end of the exit edge. */
   atExit = false;
   exitedAt: number | null = null;
+  /** Fare coins paid out so far (unloading at a platform, or running through). */
+  coinsPaid = 0;
+  /** Net money this train has earned so far. */
+  earned = 0;
+  /** Whole seconds of lateness already charged. */
+  lateCharged = 0;
+  /** Stretch of travel (head distances) over which a through train earns its fare. */
+  fareRun: { start: number; length: number } | null = null;
+  /** Head distance at which the train started crossing the exit point, if it owes refunds. */
+  refundFrom: number | null = null;
+  /** Refund coins paid so far while crossing the exit point. */
+  refundCoinsPaid = 0;
 
   constructor(
     plan: ScheduledTrain,

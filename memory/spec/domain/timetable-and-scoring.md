@@ -2,11 +2,11 @@
 
 Status: Active (2026-10-11)
 
-A shift is a deterministic list of scheduled trains. The score rewards routing each train to its booked platform on time.
+A shift is a deterministic list of scheduled trains. Money rewards routing each train to its booked platform and exit on time.
 
 Related documents:
 
-- [Train movement](train-movement.md): Dwell and exit rules that determine when a train is scored.
+- [Train movement](train-movement.md): Dwell and exit rules that determine when a train pays and is settled.
 - [Game overview](../project/overview.md): Product framing for shifts and scoring.
 
 ## Scheduled train
@@ -27,13 +27,18 @@ Related documents:
 - A due train spawns onto the first approach section only when that section is neither occupied nor route-locked. Up to four trains can queue physically on the approach; beyond that, trains wait in the timetable (shown as "waiting") and their lateness accumulates.
 - Trains spawn in timetable order.
 
-## Scoring
+## Money
 
-When a train leaves the layout:
+There is no score: the dispatcher runs a cash balance (`Simulation.money`, starting at `$0`, may go negative). Every change is a single coin event (`kind: 'money'`, with `train`, `amount`, `reason`) that originates from a train, so the renderer can show where it came from.
 
-- `expectedExit = at + nominalTrip (30 s) + dwell`
-- `delay = max(0, exitTime - expectedExit)`
-- A stopping train is **correct** when the platform it stopped at equals its booked platform. A through train is correct whenever it never stopped, whichever route it took: the through line is the fast route, but any platform track is allowed. A stopping train sent down the through line misses its stop and is incorrect.
-- A train that leaves by an exit other than its booked one is **wrong exit**.
-- Points = `+100` if correct, otherwise `-50`; `-50` more for a wrong exit; minus `2` per whole second of delay beyond an `8 s` grace.
-- The shift ends when every scheduled train has left; the HUD shows the final score, correct-platform count, and late count.
+- **Unloading** (`unload`, from a random point along the train body): a stopping train pays its fare coin by coin, evenly spread across its dwell. At the booked platform it pays `10 × $10`; at a wrong platform half as many coins, `5 × $10`.
+- **Running through** (`through`, from the train body): a through train pays `10 × $10` as its head runs along the first through or platform track it enters (between the platform-bar margins), whichever route it took.
+- **Missed stop** (`missed-stop`, from the exit point): a stopping train sent down the through line never unloads; its passengers are compensated the full fare, `10 × -$10`. Nothing is charged while it runs through; the refund is paid as it leaves, like a wrong exit.
+- **Wrong exit** (`wrong-exit`, from the exit point at the far end of the exit track; the event carries `exit`): when a train leaves by an exit other than its booked one, its passengers are compensated the full fare, `10 × -$10`, paid as it crosses the exit point.
+- **Refund timing**: all refund coins a train owes are paid evenly while it crosses the exit point, from the head reaching it until the tail clears it (the last coin falls as it leaves). Missed-stop coins come first, then wrong-exit coins.
+- Penalties stack: a stopping train that misses its stop and also leaves by the wrong exit refunds the fare twice (`-$200`, 20 coins as it crosses the exit point).
+- **Lateness** (`late`, from the train head): `deadline = at + nominalTrip (30 s) + dwell`. Every whole second past `deadline + 8 s` grace while the train is on the layout costs `-$2`. Seconds a train spent waiting in the timetable before spawning are charged in a burst when it spawns.
+
+When a train leaves, its result records whether it was **correct** (a stopping train stopped at its booked platform; a through train never stopped), **correctExit**, `delaySeconds = max(0, exitTime - deadline)`, and `earned`, the net money from all its coin events.
+
+The shift ends when every scheduled train has left; the overlay shows the final balance, correct-route count, and late count.

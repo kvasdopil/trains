@@ -27,7 +27,7 @@ Environment: `ASSESS_SHIFTS` (default 100), `ASSESS_REACTION` seconds per decisi
 
 ## Metrics
 
-Per shift: finished or not (20 min cap = deadlock), duration, score, wrong routes, delays, stationary seconds by location (approach, inbound, ladder, starter), max trains in the station, max approach queue, timetable waits, decision slack (seconds between the facing route being completed and the train passing the home signal), and the share of time with a train waiting.
+Per shift: finished or not (20 min cap = deadlock), duration, money (reported as score), wrong routes, delays, stationary seconds by location (approach, inbound, ladder, starter), max trains in the station, max approach queue, timetable waits, decision slack (seconds between the facing route being completed and the train passing the home signal), and the share of time with a train waiting.
 
 ## Baseline (2026-10-11, 100 shifts, 14 trains, default timetable)
 

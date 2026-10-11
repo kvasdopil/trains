@@ -38,9 +38,17 @@ export interface TrainResult {
   correct: boolean;
   correctExit: boolean;
   delaySeconds: number;
-  points: number;
+  /** Net money this train earned: fare minus compensation and lateness charges. */
+  earned: number;
   exitedAt: number;
 }
+
+/**
+ * Why money changed. Each change is one coin with a visible origin on the train:
+ * `unload` and `through` come off the train body, `late` off its head, and the refunds
+ * `missed-stop` and `wrong-exit` off the exit point as the train crosses it.
+ */
+export type MoneyReason = 'unload' | 'through' | 'missed-stop' | 'late' | 'wrong-exit';
 
 export type GameEvent =
   | {
@@ -59,14 +67,23 @@ export type GameEvent =
       time: number;
       kind: 'left';
       train: TrainId;
-      points: number;
+      earned: number;
       correct: boolean;
       exit: ExitId | null;
       correctExit: boolean;
     }
   | { time: number; kind: 'switch'; switchId: SwitchId; state: SwitchState }
   | { time: number; kind: 'signal-hold'; signalId: SignalId; held: boolean }
-  | { time: number; kind: 'switch-locked'; switchId: SwitchId };
+  | { time: number; kind: 'switch-locked'; switchId: SwitchId }
+  | {
+      time: number;
+      kind: 'money';
+      train: TrainId;
+      amount: number;
+      reason: MoneyReason;
+      /** Exit the train left by, for `wrong-exit` coins. */
+      exit?: ExitId;
+    };
 
 interface StopTarget {
   /** Distance from the head to the exact point where it must stop. */
@@ -80,14 +97,22 @@ interface StopTarget {
 const MAX_LOOKAHEAD_EDGES = 32;
 const DEFAULT_NOMINAL_TRIP = 30;
 const DEFAULT_GRACE = 8;
-const POINTS_CORRECT = 100;
-const POINTS_WRONG = -50;
-const POINTS_WRONG_EXIT = -50;
-const POINTS_PER_LATE_SECOND = -2;
+/** Value of one fare coin. */
+export const COIN = 10;
+/** Coins a train pays when it unloads at its booked platform, or runs through as booked. */
+export const FARE_COINS = 10;
+/** Coins a train pays when it unloads at the wrong platform (half the fare). */
+export const WRONG_PLATFORM_COINS = 5;
+/** Coins refunded when a train leaves by the wrong exit: passengers get the full fare back. */
+export const WRONG_EXIT_COINS = FARE_COINS;
+/** Coins refunded when a stopping train leaves without stopping (sent down the through line). */
+export const MISSED_STOP_COINS = FARE_COINS;
+/** Charged every whole second a train on the layout runs late beyond the grace. */
+export const LATE_CHARGE_PER_SECOND = 2;
 
 /**
  * Pure, deterministic station simulation. It owns switch states, trains, signals and
- * scoring. Rendering and input live outside; they call `toggleSwitch` and `step`.
+ * money. Rendering and input live outside; they call `toggleSwitch` and `step`.
  */
 export class Simulation {
   readonly graph: TrackGraph;
@@ -97,7 +122,7 @@ export class Simulation {
   readonly delayGraceSeconds: number;
 
   time = 0;
-  score = 0;
+  money = 0;
   switches: Record<SwitchId, SwitchState>;
   trains: Train[] = [];
   pending: ScheduledTrain[];
@@ -180,8 +205,13 @@ export class Simulation {
     for (const train of this.trains) {
       if (train.status === 'left') continue;
       this.advanceTrain(train, dt);
+      this.payFareRun(train);
+      this.payRefunds(train);
     }
     this.time += dt;
+    for (const train of this.trains) {
+      if (train.status !== 'left') this.chargeLateness(train);
+    }
   }
 
   // ---------------------------------------------------------------------------------------
@@ -276,8 +306,10 @@ export class Simulation {
   private advanceTrain(train: Train, dt: number): void {
     if (train.status === 'dwelling') {
       train.dwellRemaining -= dt;
+      this.payUnloading(train);
       if (train.dwellRemaining <= 0) {
         train.dwellRemaining = 0;
+        this.payUnloading(train);
         train.status = 'running';
         this.events.push({
           time: this.time,
@@ -358,6 +390,8 @@ export class Simulation {
       }
       if (next.kind === 'exit') {
         train.atExit = true;
+        const refunds = this.refundCoins(train);
+        if (refunds.missedStop + refunds.wrongExit > 0) train.refundFrom = train.headEdgeEnd;
         return;
       }
       train.path.push({ edge: next.edge.id, start: train.headEdgeEnd, length: next.edge.length });
@@ -376,6 +410,7 @@ export class Simulation {
     const through = this.graph.throughByEdge.get(edge);
     if (through) {
       train.viaThrough = true;
+      this.startFareRun(train, edge);
       // A stopping train on the through line is going to miss its stop.
       this.events.push({
         time: this.time,
@@ -388,6 +423,7 @@ export class Simulation {
     }
     const platform = this.graph.platformByEdge.get(edge);
     if (platform && !train.stops) {
+      this.startFareRun(train, edge);
       // Through trains may run through any platform, as long as they never stop.
       this.events.push({
         time: this.time,
@@ -399,23 +435,111 @@ export class Simulation {
     }
   }
 
+  /** Fare coins a train pays in total: the full fare, or half at the wrong platform. */
+  private fareCoins(train: Train): number {
+    if (!train.stops) return FARE_COINS;
+    return train.servedPlatform === train.plan.destination ? FARE_COINS : WRONG_PLATFORM_COINS;
+  }
+
+  private addMoney(train: Train, amount: number, reason: MoneyReason, exit?: ExitId): void {
+    this.money += amount;
+    train.earned += amount;
+    this.events.push({
+      time: this.time,
+      kind: 'money',
+      train: train.id,
+      amount,
+      reason,
+      ...(exit ? { exit } : {}),
+    });
+  }
+
+  /** Passengers leave a dwelling train coin by coin, spread evenly across the dwell. */
+  private payUnloading(train: Train): void {
+    const coins = this.fareCoins(train);
+    const dwell = train.plan.dwell;
+    const elapsed = dwell - train.dwellRemaining;
+    const due = dwell > 0 ? Math.min(coins, Math.floor((elapsed / dwell) * coins + 1e-9)) : coins;
+    while (train.coinsPaid < due) {
+      train.coinsPaid += 1;
+      this.addMoney(train, COIN, 'unload');
+    }
+  }
+
+  /** Along the first through or platform track a through train runs on, it earns its fare. */
+  private startFareRun(train: Train, edge: EdgeId): void {
+    if (train.fareRun || train.stops) return;
+    const edgeLength = this.graph.edge(edge).length;
+    train.fareRun = {
+      start: train.headEdgeEnd - edgeLength + DEFAULT_PLATFORM_MARGIN,
+      length: edgeLength - 2 * DEFAULT_PLATFORM_MARGIN,
+    };
+  }
+
+  /** Pay the coins due so far on the train's fare run; `finish` pays out the remainder. */
+  private payFareRun(train: Train, finish = false): void {
+    const run = train.fareRun;
+    if (!run || train.status === 'left') return;
+    const progress = finish ? 1 : (train.headDist - run.start) / run.length;
+    const due = Math.min(FARE_COINS, Math.max(0, Math.floor(progress * FARE_COINS + 1e-9)));
+    while (train.coinsPaid < due) {
+      train.coinsPaid += 1;
+      this.addMoney(train, COIN, 'through');
+    }
+  }
+
+  /** Refund coins a train owes as it leaves: the fare for a missed stop and for a wrong exit. */
+  private refundCoins(train: Train): { missedStop: number; wrongExit: number } {
+    return {
+      missedStop: train.stops && train.servedPlatform === null ? MISSED_STOP_COINS : 0,
+      wrongExit: train.exitTaken === train.plan.exit ? 0 : WRONG_EXIT_COINS,
+    };
+  }
+
+  /**
+   * Refunds are paid coin by coin as the train crosses the exit point, from the head reaching
+   * it until the tail clears it: missed-stop coins first, then wrong-exit coins. `finish` pays
+   * the remainder.
+   */
+  private payRefunds(train: Train, finish = false): void {
+    const from = train.refundFrom;
+    if (from === null || train.status === 'left') return;
+    const { missedStop, wrongExit } = this.refundCoins(train);
+    const total = missedStop + wrongExit;
+    const progress = finish ? 1 : (train.headDist - from) / train.length;
+    const due = Math.min(total, Math.max(0, Math.floor(progress * total)));
+    while (train.refundCoinsPaid < due) {
+      const reason = train.refundCoinsPaid < missedStop ? 'missed-stop' : 'wrong-exit';
+      train.refundCoinsPaid += 1;
+      this.addMoney(train, -COIN, reason, train.exitTaken ?? undefined);
+    }
+  }
+
+  /** Shift second by which the train should have left, including the grace. */
+  private deadline(train: Train): number {
+    return train.plan.at + this.nominalTripSeconds + train.plan.dwell;
+  }
+
+  /** Every whole second a train on the layout runs past its deadline plus grace costs money. */
+  private chargeLateness(train: Train): void {
+    const overdue = Math.floor(this.time - this.deadline(train) - this.delayGraceSeconds + 1e-9);
+    while (train.lateCharged < overdue) {
+      train.lateCharged += 1;
+      this.addMoney(train, -LATE_CHARGE_PER_SECOND, 'late');
+    }
+  }
+
   private completeTrain(train: Train): void {
+    this.payFareRun(train, true);
+    this.payRefunds(train, true);
     train.status = 'left';
     train.exitedAt = this.time;
     train.lock.clear();
-    const expectedExit = train.plan.at + this.nominalTripSeconds + train.plan.dwell;
-    const delaySeconds = Math.max(0, this.time - expectedExit);
+    const delaySeconds = Math.max(0, this.time - this.deadline(train));
     const correct = train.stops
       ? train.servedPlatform === train.plan.destination
       : train.servedPlatform === null;
     const correctExit = train.exitTaken === train.plan.exit;
-    const latePenalty =
-      Math.floor(Math.max(0, delaySeconds - this.delayGraceSeconds)) * POINTS_PER_LATE_SECOND;
-    const points =
-      (correct ? POINTS_CORRECT : POINTS_WRONG) +
-      (correctExit ? 0 : POINTS_WRONG_EXIT) +
-      latePenalty;
-    this.score += points;
     this.results.push({
       id: train.id,
       booked: train.plan.destination,
@@ -426,14 +550,14 @@ export class Simulation {
       correct,
       correctExit,
       delaySeconds,
-      points,
+      earned: train.earned,
       exitedAt: this.time,
     });
     this.events.push({
       time: this.time,
       kind: 'left',
       train: train.id,
-      points,
+      earned: train.earned,
       correct,
       exit: train.exitTaken,
       correctExit,

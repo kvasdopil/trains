@@ -44,8 +44,9 @@ describe('Simulation', () => {
     expect(result?.servedPlatform).toBe('P3');
     expect(result?.correct).toBe(true);
     expect(result?.delaySeconds).toBe(0);
-    expect(result?.points).toBe(100);
-    expect(sim.events.map((e) => e.kind)).toEqual([
+    expect(result?.earned).toBe(100);
+    expect(sim.money).toBe(100);
+    expect(sim.events.filter((e) => e.kind !== 'money').map((e) => e.kind)).toEqual([
       'switch',
       'switch',
       'arrival',
@@ -53,6 +54,83 @@ describe('Simulation', () => {
       'departed',
       'left',
     ]);
+  });
+
+  describe('money', () => {
+    const coins = (sim: Simulation, reason: string): number[] =>
+      sim.events.flatMap((e) => (e.kind === 'money' && e.reason === reason ? [e.amount] : []));
+
+    it('pays the fare coin by coin while the train unloads at its booked platform', () => {
+      const sim = new Simulation(centralStation, [train({ dwell: 10 })]);
+      setRouteP3(sim);
+      run(sim, 60, () => sim.trains[0]?.status === 'dwelling');
+      run(sim, 5);
+      expect(coins(sim, 'unload')).toHaveLength(5);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'unload')).toEqual(Array<number>(10).fill(10));
+      expect(sim.money).toBe(100);
+    });
+
+    it('pays half as many coins at the wrong platform', () => {
+      const sim = new Simulation(centralStation, [train({ destination: 'P1' })]);
+      setRouteP3(sim);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'unload')).toEqual(Array<number>(5).fill(10));
+    });
+
+    it('pays a through train as it runs along the through line', () => {
+      const sim = new Simulation(centralStation, [throughTrain()]);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'through')).toEqual(Array<number>(10).fill(10));
+    });
+
+    it('refunds the fare at the exit point as a train crosses it by the wrong exit', () => {
+      const sim = new Simulation(centralStation, [train({ destination: 'P1' })]);
+      for (const id of ['A', 'B', 'D']) sim.toggleSwitch(id);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'wrong-exit')).toEqual(Array<number>(10).fill(-10));
+      expect(sim.events.find((e) => e.kind === 'money' && e.reason === 'wrong-exit')).toMatchObject(
+        { exit: 'N' },
+      );
+      expect(sim.money).toBe(0);
+      // One coin per tenth of the train's length as it crosses the exit point.
+      const times = sim.events.flatMap((e) =>
+        e.kind === 'money' && e.reason === 'wrong-exit' ? [e.time] : [],
+      );
+      const exitedAt = sim.trains[0]?.exitedAt ?? 0;
+      expect(times[9]).toBeCloseTo(exitedAt, 1);
+      expect(exitedAt - (times[0] ?? 0)).toBeGreaterThan(0.5);
+      expect(new Set(times).size).toBe(10);
+    });
+
+    it('refunds a missed stop at the exit point as the train leaves, not on the through line', () => {
+      const sim = new Simulation(centralStation, [train()]);
+      run(sim, 60, () => sim.trains[0]?.headEntry.edge === 'e_out_s');
+      expect(coins(sim, 'missed-stop')).toHaveLength(0);
+      run(sim, 60, () => sim.finished);
+      const refunds = sim.events.filter((e) => e.kind === 'money' && e.reason === 'missed-stop');
+      expect(refunds).toHaveLength(10);
+      expect(refunds[0]).toMatchObject({ amount: -10, exit: 'S' });
+      expect(refunds.at(-1)?.time).toBeCloseTo(sim.trains[0]?.exitedAt ?? 0, 1);
+    });
+
+    it('stacks the missed-stop and wrong-exit refunds', () => {
+      const sim = new Simulation(centralStation, [train({ exit: 'N' })]);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'missed-stop')).toHaveLength(10);
+      expect(coins(sim, 'wrong-exit')).toHaveLength(10);
+      expect(sim.money).toBe(-200);
+      // Missed-stop coins come first, then wrong-exit coins, all while crossing the exit point.
+      const reasons = sim.events.flatMap((e) => (e.kind === 'money' ? [e.reason] : []));
+      expect(reasons.indexOf('wrong-exit')).toBe(10);
+    });
+
+    it('charges every second a train on the layout runs late beyond the grace', () => {
+      const sim = new Simulation(centralStation, [train()], { nominalTripSeconds: 0 });
+      // Deadline is 2 s (dwell) + 8 s grace; the train is still on its way at 15 s.
+      run(sim, 15);
+      expect(coins(sim, 'late')).toEqual(Array<number>(5).fill(-2));
+    });
   });
 
   it('stops at the end of the platform bar, short of the outgoing light', () => {
@@ -73,8 +151,16 @@ describe('Simulation', () => {
     expect(result?.servedPlatform).toBeNull();
     expect(result?.viaThrough).toBe(true);
     expect(result?.correct).toBe(false);
-    expect(result?.points).toBe(-50);
-    expect(sim.events.map((e) => e.kind)).toEqual(['arrival', 'passing', 'left']);
+    expect(result?.earned).toBe(-100);
+    expect(sim.money).toBe(-100);
+    expect(
+      sim.events.flatMap((e) => (e.kind === 'money' ? [`${e.reason} ${e.amount}`] : [])),
+    ).toEqual(Array<string>(10).fill('missed-stop -10'));
+    expect(sim.events.filter((e) => e.kind !== 'money').map((e) => e.kind)).toEqual([
+      'arrival',
+      'passing',
+      'left',
+    ]);
     expect(sim.events[1]).toMatchObject({ kind: 'passing', track: 'T', correct: false });
   });
 
@@ -84,7 +170,7 @@ describe('Simulation', () => {
     run(sim, 60, () => sim.finished);
     expect(sim.results[0]?.servedPlatform).toBe('P3');
     expect(sim.results[0]?.correct).toBe(false);
-    expect(sim.results[0]?.points).toBe(-50);
+    expect(sim.results[0]?.earned).toBe(50);
   });
 
   it('reaches platform 1 when the dispatcher sets the ladder before arrival', () => {
@@ -94,7 +180,7 @@ describe('Simulation', () => {
     expect(sim.results[0]?.servedPlatform).toBe('P1');
     expect(sim.results[0]?.exitTaken).toBe('N');
     expect(sim.results[0]?.correctExit).toBe(false);
-    expect(sim.results[0]?.points).toBe(50);
+    expect(sim.results[0]?.earned).toBe(0);
   });
 
   it('scores the booked exit and routes across the diamond to reach it', () => {
@@ -104,7 +190,7 @@ describe('Simulation', () => {
     expect(sim.results[0]?.servedPlatform).toBe('P1');
     expect(sim.results[0]?.exitTaken).toBe('S');
     expect(sim.results[0]?.correctExit).toBe(true);
-    expect(sim.results[0]?.points).toBe(100);
+    expect(sim.results[0]?.earned).toBe(100);
   });
 
   it('runs a through train down the centre line without stopping', () => {
@@ -114,8 +200,12 @@ describe('Simulation', () => {
     expect(result?.viaThrough).toBe(true);
     expect(result?.servedPlatform).toBeNull();
     expect(result?.correct).toBe(true);
-    expect(result?.points).toBe(100);
-    expect(sim.events.map((e) => e.kind)).toEqual(['arrival', 'passing', 'left']);
+    expect(result?.earned).toBe(100);
+    expect(sim.events.filter((e) => e.kind !== 'money').map((e) => e.kind)).toEqual([
+      'arrival',
+      'passing',
+      'left',
+    ]);
     expect(sim.events[1]).toMatchObject({ kind: 'passing', track: 'T', correct: true });
     expect(sim.trains[0]?.exitedAt).toBeLessThan(26);
   });
@@ -135,7 +225,8 @@ describe('Simulation', () => {
     expect(result?.servedPlatform).toBeNull();
     expect(result?.viaThrough).toBe(false);
     expect(result?.correct).toBe(true);
-    expect(result?.points).toBe(100);
+    expect(result?.earned).toBe(100);
+    expect(sim.events.filter((e) => e.kind === 'money' && e.reason === 'through')).toHaveLength(10);
     expect(sim.events.some((e) => e.kind === 'stopped')).toBe(false);
     expect(sim.events).toContainEqual(
       expect.objectContaining({ kind: 'passing', track: 'P3', correct: true }),
@@ -296,7 +387,7 @@ describe('Simulation', () => {
     expect(sim.toggleSignalHold('S3')).toBe(false);
     expect(sim.aspects.get('S3')).toBe('green');
     run(sim, 60, () => sim.finished);
-    expect(sim.results[0]?.points).toBe(100);
+    expect(sim.results[0]?.earned).toBe(100);
     expect(() => sim.toggleSignalHold('Z9')).toThrow();
   });
 

@@ -323,3 +323,9 @@ button.active {
     gap: 12px;
   }
 }
+
+#money {
+  display: inline-block;
+  transform-origin: left center;
+  font-variant-numeric: tabular-nums;
+}

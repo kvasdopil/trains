@@ -1,3 +1,5 @@
+import { gsap } from 'gsap';
+
 import type { GameEvent, Simulation } from '../core/simulation';
 import type { ScheduledTrain } from '../core/types';
 
@@ -21,7 +23,15 @@ const formatClock = (seconds: number): string => {
   return `${mm}:${ss}`;
 };
 
-const formatPoints = (points: number): string => (points >= 0 ? `+${points}` : `${points}`);
+export const formatMoney = (amount: number): string =>
+  amount < 0 ? `-$${(-amount).toLocaleString('en-US')}` : `$${amount.toLocaleString('en-US')}`;
+
+const formatDelta = (amount: number): string =>
+  amount >= 0 ? `+${formatMoney(amount)}` : formatMoney(amount);
+
+const MONEY_UP = '#4ade80';
+const MONEY_DOWN = '#f87171';
+const MONEY_IDLE = '#e2e8f0';
 
 const escapeHtml = (text: string): string =>
   text.replace(/[&<>"']/g, (c) => {
@@ -56,7 +66,7 @@ const formatEvent = (event: GameEvent): string => {
     case 'departed':
       return `${event.train} ready to depart ${event.platform}`;
     case 'left':
-      return `${event.train} left via ${event.exit ?? '?'} (${formatPoints(event.points)})${event.correct ? '' : ' wrong track ✗'}${event.correctExit ? '' : ' wrong exit ✗'}`;
+      return `${event.train} left via ${event.exit ?? '?'} (${formatDelta(event.earned)})${event.correct ? '' : ' wrong track ✗'}${event.correctExit ? '' : ' wrong exit ✗'}`;
     case 'switch':
       return `Switch ${event.switchId} set to ${event.state}`;
     case 'switch-locked':
@@ -65,6 +75,8 @@ const formatEvent = (event: GameEvent): string => {
       return event.held
         ? `Signal ${event.signalId} held at red by dispatcher`
         : `Signal ${event.signalId} released`;
+    case 'money':
+      return `${event.train} ${event.reason} ${formatDelta(event.amount)}`;
   }
 };
 
@@ -76,8 +88,10 @@ function byId<T extends HTMLElement>(id: string): T {
 
 /** DOM side panel: clock, score, timetable, event log and the end-of-shift overlay. */
 export class Hud {
-  private readonly score = byId<HTMLSpanElement>('score');
-  private readonly progress = byId<HTMLSpanElement>('progress');
+  private readonly money = byId<HTMLSpanElement>('money');
+  /** The value the counter currently shows; tweened towards the simulation's money. */
+  private readonly moneyShown = { value: 0 };
+  private moneyTarget = 0;
   private readonly timetable = byId<HTMLUListElement>('timetable');
   private readonly log = byId<HTMLUListElement>('log');
   private readonly pauseButton = byId<HTMLButtonElement>('btn-pause');
@@ -119,8 +133,7 @@ export class Hud {
   }
 
   update(sim: Simulation, state: HudState): void {
-    this.score.textContent = String(sim.score);
-    this.progress.textContent = `${sim.results.length} / ${sim.schedule.length}`;
+    this.updateMoney(sim.money);
     this.pauseButton.textContent = state.paused ? 'Resume' : 'Pause';
     this.pauseButton.classList.toggle('active', state.paused);
     this.speedButton.textContent = `${state.speed}x`;
@@ -132,6 +145,36 @@ export class Hud {
       if (this.panel === 'timetable') this.renderTimetable(sim);
       if (this.panel === 'log') this.renderLog(sim);
     }
+  }
+
+  /** Count the money counter towards the new balance, flashing green or red. */
+  private updateMoney(money: number): void {
+    if (money === this.moneyTarget) return;
+    const increased = money > this.moneyTarget;
+    this.moneyTarget = money;
+    gsap.to(this.moneyShown, {
+      value: money,
+      duration: 0.6,
+      ease: 'power2.out',
+      overwrite: true,
+      onUpdate: () => {
+        this.money.textContent = formatMoney(Math.round(this.moneyShown.value));
+      },
+    });
+    gsap.fromTo(
+      this.money,
+      { color: increased ? MONEY_UP : MONEY_DOWN, scale: 1.15 },
+      { color: MONEY_IDLE, scale: 1, duration: 0.9, ease: 'power2.out', overwrite: true },
+    );
+  }
+
+  /** Snap the money counter to zero for a new shift. */
+  resetMoney(): void {
+    gsap.killTweensOf([this.moneyShown, this.money]);
+    this.moneyShown.value = 0;
+    this.moneyTarget = 0;
+    this.money.textContent = formatMoney(0);
+    gsap.set(this.money, { clearProps: 'color,transform' });
   }
 
   forceRefresh(): void {
@@ -158,7 +201,7 @@ export class Hud {
       const late = result.delaySeconds >= 1 ? `, ${Math.round(result.delaySeconds)}s late` : '';
       const via = result.servedPlatform ?? (result.viaThrough ? 'T' : '—');
       const ok = result.correct && result.correctExit;
-      status = `${via}/${result.exitTaken ?? '?'} ${ok ? '✓' : '✗'} ${formatPoints(result.points)}${late}`;
+      status = `${via}/${result.exitTaken ?? '?'} ${ok ? '✓' : '✗'} ${formatDelta(result.earned)}${late}`;
     } else if (active) {
       state = 'active';
       if (!active.stops) {
@@ -192,7 +235,11 @@ export class Hud {
   }
 
   private renderLog(sim: Simulation): void {
-    const recent = sim.events.slice(-8).reverse();
+    // Money changes are shown as popups on the canvas; the log keeps to train movements.
+    const recent = sim.events
+      .filter((e) => e.kind !== 'money')
+      .slice(-8)
+      .reverse();
     this.log.innerHTML = recent
       .map(
         (e) =>

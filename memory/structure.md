@@ -15,7 +15,7 @@ Related documents:
 - `src/core/` — Pure TypeScript simulation: track graph, switches, signals, trains, timetable, scoring. No DOM or PixiJS imports. Unit tests live in `src/core/__tests__/`.
 - `src/core/layouts/` — Station layout data (nodes, edges, switches, signals, platforms). One file per station.
 - `src/game/` — PixiJS rendering of the schematic station and input mapping (switch clicks).
-- `src/ui/` — DOM HUD: clock, score, timetable, event log, end-of-shift overlay.
+- `src/ui/` — DOM HUD: money counter, timetable, event log, end-of-shift overlay.
 - `src/main.ts` — Composition root: creates the simulation, renderer, HUD and the fixed-step game loop.
 - `index.html`, `src/style.css` — Page shell and styling.
 - `memory/` — This memory bank.

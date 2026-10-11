@@ -14,6 +14,7 @@ Related documents:
 - TypeScript (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
 - Vite for dev server and production bundling.
 - PixiJS 8 for the station canvas. Everything else is plain DOM.
+- GSAP 3 for UI animation: the money counter and the money popups on the canvas (it tweens Pixi display objects directly). Simulation code never imports it.
 
 ## Quality gates
 

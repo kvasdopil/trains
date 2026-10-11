@@ -5,7 +5,7 @@ import { centralStation } from './core/layouts/central-station';
 import { generateSchedule } from './core/schedule';
 import { Simulation } from './core/simulation';
 import { COLORS, STAGE_HEIGHT, STAGE_WIDTH, StationRenderer } from './game/renderer';
-import { Hud } from './ui/hud';
+import { formatMoney, Hud } from './ui/hud';
 
 const FIXED_DT = 1 / 60;
 const SPEEDS = [1, 2, 4] as const;
@@ -66,6 +66,7 @@ async function main(): Promise<void> {
     accumulator = 0;
     overlayShown = false;
     hud.hideOverlay();
+    hud.resetMoney();
     hud.forceRefresh();
   };
 
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
       const late = sim.results.filter((r) => r.delaySeconds >= 1).length;
       hud.showOverlay(
         'Shift complete',
-        `Final score <b>${sim.score}</b>. ${correct} of ${sim.results.length} trains were routed correctly, ${late} ran late.`,
+        `Final balance <b>${formatMoney(sim.money)}</b>. ${correct} of ${sim.results.length} trains were routed correctly, ${late} ran late.`,
       );
     }
   });

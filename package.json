@@ -18,6 +18,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
+    "gsap": "^3.13.0",
     "pixi.js": "^8.22.0"
   },
   "devDependencies": {

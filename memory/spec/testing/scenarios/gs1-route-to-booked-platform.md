@@ -14,12 +14,12 @@ Status: Active (2026-10-11)
 
 ## Assertions
 
-- The train served `P3`, `correct` is true, delay is 0, points are `+100`.
+- The train served `P3`, `correct` is true, delay is 0, it pays ten `+$10` unload coins during its dwell and `earned` is `$100`.
 - Events occur in the order `arrival`, `stopped`, `departed`, `left` (after the two `switch` events).
 - The stopped head sits at the end of the platform bar (offset 380 on `e_p3`, x = 780).
-- Variant: with the switches left `normal`, the train runs down the through line, never stops, and scores `-50` with a `passing` event marked incorrect.
-- Variant: booked `P1` but routed to P3, the train stops at P3 and scores `-50`.
-- Variant: booked `P1`/`S`, routed to P1 with the crossover left straight: leaves by `N`, `correctExit` false, scores `+50`. With `G` and `L` reverse it crosses the diamond to `S` and scores `+100`.
+- Variant: with the switches left `normal`, the train runs down the through line, never stops, refunds ten `missed-stop` coins (`-$100`) at the exit point as it leaves, with a `passing` event marked incorrect.
+- Variant: booked `P1` but routed to P3, the train stops at P3 and pays only five unload coins (`$50`).
+- Variant: booked `P1`/`S`, routed to P1 with the crossover left straight: leaves by `N`, `correctExit` false, earns `$100 - 10 × $10 = $0`. With `G` and `L` reverse it crosses the diamond to `S` and earns `$100`.
 
 ## Operations
 

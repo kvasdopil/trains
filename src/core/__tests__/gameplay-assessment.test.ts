@@ -334,7 +334,7 @@ function runShift(seed: number): ShiftReport {
     seed,
     finished: sim.finished,
     duration: sim.time,
-    score: sim.score,
+    score: sim.money,
     correct: sim.results.filter((r) => r.correct).length,
     wrongExits: sim.results.filter((r) => !r.correctExit).length,
     trains: sim.results.length,

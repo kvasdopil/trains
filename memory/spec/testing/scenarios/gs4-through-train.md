@@ -14,8 +14,8 @@ Status: Active (2026-10-11)
 
 ## Assertions
 
-- Default route: the train passes `T` without stopping, `viaThrough` is true, no `stopped` event, `correct` is true, points `+100`, and it leaves within 16 s.
-- Via P3: no `stopped` event, a `passing` event for `P3` marked correct, `correct` is true, points `+100`, and its speed on `e_p3` never exceeds 45% of maximum.
+- Default route: the train passes `T` without stopping, `viaThrough` is true, no `stopped` event, `correct` is true, ten `through` coins (`$100`), and it leaves within 16 s.
+- Via P3: no `stopped` event, a `passing` event for `P3` marked correct, `correct` is true, `$100` earned, and its speed on `e_p3` never exceeds 45% of maximum.
 
 ## Operations
 
