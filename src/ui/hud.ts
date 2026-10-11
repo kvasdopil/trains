@@ -224,7 +224,7 @@ export class Hud {
     }
     return `<li class="row ${state}">
       <span class="id">${escapeHtml(plan.id)}</span>
-      <span class="plat ${plan.destination}">${plan.destination}</span><span class="exit">→${plan.exit}</span>
+      <span class="plat ${plan.express ? 'express' : plan.destination}">${plan.destination}</span><span class="exit">→${plan.exit}</span>
       <span class="status">${escapeHtml(status)}</span>
     </li>`;
   }

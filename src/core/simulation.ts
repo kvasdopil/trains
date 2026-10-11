@@ -1,6 +1,12 @@
 import { TrackGraph } from './graph';
 import { computeAspects, routeAhead } from './signals';
-import { DEFAULT_PHYSICS, PLATFORM_PASS_SPEED_FACTOR, STOP_MARGIN, Train } from './train';
+import {
+  DEFAULT_PHYSICS,
+  EXPRESS_PHYSICS,
+  PLATFORM_PASS_SPEED_FACTOR,
+  STOP_MARGIN,
+  Train,
+} from './train';
 import type { TrainPhysics } from './train';
 import { DEFAULT_PLATFORM_MARGIN } from './types';
 import type {
@@ -19,6 +25,8 @@ import type {
 
 export interface SimulationOptions {
   physics?: TrainPhysics;
+  /** Physics for express trains. */
+  expressPhysics?: TrainPhysics;
   /** Seconds a train is expected to need from entry to exit, excluding its dwell. */
   nominalTripSeconds?: number;
   /** Seconds of lateness that are forgiven before delay penalties apply. */
@@ -109,6 +117,8 @@ export const WRONG_EXIT_COINS = FARE_COINS;
 export const MISSED_STOP_COINS = FARE_COINS;
 /** Charged every whole second a train on the layout runs late beyond the grace. */
 export const LATE_CHARGE_PER_SECOND = 2;
+/** An express multiplies every coin it earns or costs by this. */
+export const EXPRESS_MULTIPLIER = 3;
 
 /**
  * Pure, deterministic station simulation. It owns switch states, trains, signals and
@@ -118,6 +128,7 @@ export class Simulation {
   readonly graph: TrackGraph;
   readonly schedule: readonly ScheduledTrain[];
   readonly physics: TrainPhysics;
+  readonly expressPhysics: TrainPhysics;
   readonly nominalTripSeconds: number;
   readonly delayGraceSeconds: number;
 
@@ -141,6 +152,7 @@ export class Simulation {
     this.graph = new TrackGraph(layout);
     this.schedule = schedule;
     this.physics = options.physics ?? DEFAULT_PHYSICS;
+    this.expressPhysics = options.expressPhysics ?? EXPRESS_PHYSICS;
     this.nominalTripSeconds = options.nominalTripSeconds ?? DEFAULT_NOMINAL_TRIP;
     this.delayGraceSeconds = options.delayGraceSeconds ?? DEFAULT_GRACE;
     this.switches = this.graph.defaultSwitchStates();
@@ -248,7 +260,8 @@ export class Simulation {
       if (this.occupied.has(entry.id) || this.locked.has(entry.id)) break;
       this.pending.shift();
       const stops = this.graph.isStoppingDestination(next.destination);
-      const train = new Train(next, entry, this.time, this.physics, stops);
+      const physics = next.express ? this.expressPhysics : this.physics;
+      const train = new Train(next, entry, this.time, physics, stops);
       this.trains.push(train);
       this.events.push({
         time: this.time,
@@ -331,6 +344,11 @@ export class Simulation {
       ? Math.sqrt(target.limitAhead.speed ** 2 + 2 * deceleration * target.limitAhead.dist)
       : Infinity;
     const targetSpeed = Math.min(this.speedLimit(train), brakingSpeed, limitSpeed);
+    // Held up by the dispatcher: braking for (or standing at) a red signal or unset route.
+    const held =
+      (target.reason === 'signal' || target.reason === 'blocked') &&
+      brakingSpeed < this.speedLimit(train);
+    if (held) train.heldSeconds += dt;
     if (targetSpeed > train.speed) {
       train.speed = Math.min(train.speed + acceleration * dt, targetSpeed);
     } else {
@@ -462,7 +480,7 @@ export class Simulation {
     const due = dwell > 0 ? Math.min(coins, Math.floor((elapsed / dwell) * coins + 1e-9)) : coins;
     while (train.coinsPaid < due) {
       train.coinsPaid += 1;
-      this.addMoney(train, COIN, 'unload');
+      this.addMoney(train, this.coin(train), 'unload');
     }
   }
 
@@ -484,7 +502,7 @@ export class Simulation {
     const due = Math.min(FARE_COINS, Math.max(0, Math.floor(progress * FARE_COINS + 1e-9)));
     while (train.coinsPaid < due) {
       train.coinsPaid += 1;
-      this.addMoney(train, COIN, 'through');
+      this.addMoney(train, this.coin(train), 'through');
     }
   }
 
@@ -511,7 +529,7 @@ export class Simulation {
     while (train.refundCoinsPaid < due) {
       const reason = train.refundCoinsPaid < missedStop ? 'missed-stop' : 'wrong-exit';
       train.refundCoinsPaid += 1;
-      this.addMoney(train, -COIN, reason, train.exitTaken ?? undefined);
+      this.addMoney(train, -this.coin(train), reason, train.exitTaken ?? undefined);
     }
   }
 
@@ -520,13 +538,30 @@ export class Simulation {
     return train.plan.at + this.nominalTripSeconds + train.plan.dwell;
   }
 
-  /** Every whole second a train on the layout runs past its deadline plus grace costs money. */
+  /**
+   * Every whole second a train on the layout runs past its deadline plus grace costs money.
+   * An express has no grace, pays triple, and is also charged for every second it is held up
+   * at a signal, starting the moment it has to brake.
+   */
   private chargeLateness(train: Train): void {
-    const overdue = Math.floor(this.time - this.deadline(train) - this.delayGraceSeconds + 1e-9);
+    const grace = train.plan.express ? 0 : this.delayGraceSeconds;
+    let overdue = Math.floor(this.time - this.deadline(train) - grace + 1e-9);
+    // An express is late the moment it is held up: one charge as it starts braking or stops,
+    // then one per further second held.
+    if (train.plan.express) overdue = Math.max(overdue, Math.ceil(train.heldSeconds - 1e-9));
     while (train.lateCharged < overdue) {
       train.lateCharged += 1;
-      this.addMoney(train, -LATE_CHARGE_PER_SECOND, 'late');
+      this.addMoney(train, -LATE_CHARGE_PER_SECOND * this.multiplier(train), 'late');
     }
+  }
+
+  private multiplier(train: Train): number {
+    return train.plan.express ? EXPRESS_MULTIPLIER : 1;
+  }
+
+  /** Value of one fare or refund coin for this train. */
+  private coin(train: Train): number {
+    return COIN * this.multiplier(train);
   }
 
   private completeTrain(train: Train): void {

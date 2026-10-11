@@ -21,6 +21,12 @@ export interface ScheduleOptions {
   throughTracks?: TrackId[];
   /** Share of trains that run through without stopping, 0..1. */
   throughShare?: number;
+  /** Share of through trains that are expresses, 0..1. */
+  expressShare?: number;
+  /** Most expresses in one shift; further would-be expresses run as ordinary through trains. */
+  maxExpress?: number;
+  /** Exit every express is booked for; random like other trains when omitted. */
+  expressExit?: ExitId;
   /** Exits trains can be booked for; each train gets one at random. */
   exits: ExitId[];
   /** Seconds before the first train arrives. */
@@ -46,6 +52,8 @@ export interface ScheduleOptions {
 
 const STOPPING_SERVICES = ['RE', 'S', 'RB'];
 const THROUGH_SERVICES = ['IC', 'EC', 'ICE'];
+/** Service prefix of express trains. */
+export const EXPRESS_SERVICE = 'X';
 
 /** Generate a deterministic timetable for one dispatcher shift. */
 export function generateSchedule(options: ScheduleOptions): ScheduledTrain[] {
@@ -59,6 +67,9 @@ export function generateSchedule(options: ScheduleOptions): ScheduledTrain[] {
   const platformGap = options.platformGap ?? 30;
   const throughTracks = options.throughTracks ?? [];
   const throughShare = throughTracks.length > 0 ? (options.throughShare ?? 0.3) : 0;
+  const expressShare = options.expressShare ?? 0.3;
+  const maxExpress = options.maxExpress ?? 2;
+  let expressCount = 0;
   const pick = <T>(items: readonly T[]): T => {
     const item = items[Math.floor(rng() * items.length)];
     if (item === undefined) throw new Error('Cannot pick from an empty list');
@@ -72,6 +83,8 @@ export function generateSchedule(options: ScheduleOptions): ScheduledTrain[] {
   let at = options.firstAt ?? 4;
   for (let i = 0; i < options.count; i += 1) {
     const through = rng() < throughShare;
+    const express = through && rng() < expressShare && expressCount < maxExpress;
+    if (express) expressCount += 1;
     let destination: TrackId;
     if (through) {
       destination = pick(throughTracks);
@@ -87,13 +100,18 @@ export function generateSchedule(options: ScheduleOptions): ScheduledTrain[] {
       lastBookedAt.set(destination, at);
     }
     const trainLength = between(length);
+    const number = 100 + Math.floor(rng() * 900);
     trains.push({
-      id: `${pick(through ? THROUGH_SERVICES : STOPPING_SERVICES)} ${100 + Math.floor(rng() * 900)}`,
+      // Expresses are named like `X123`; other services like `IC 456`.
+      id: express
+        ? `${EXPRESS_SERVICE}${number}`
+        : `${pick(through ? THROUGH_SERVICES : STOPPING_SERVICES)} ${number}`,
       at,
       destination,
-      exit: pick(options.exits),
+      exit: express && options.expressExit ? options.expressExit : pick(options.exits),
       length: trainLength,
       dwell: through ? 0 : Math.round(dwellBase + dwellPerUnit * trainLength),
+      ...(express ? { express: true } : {}),
     });
     // Bunched arrivals put several trains in the station at the same time.
     at += between(rng() < bunchChance ? bunchGap : gap);

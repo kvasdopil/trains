@@ -28,7 +28,7 @@ If the walk reaches the exit there is no stop target.
 
 ## Kinematics
 
-- Default physics: max speed 110, acceleration 35, deceleration 55 (track units per second, per second squared).
+- Default physics: max speed 110, acceleration 35, deceleration 55 (track units per second, per second squared). Express physics: max speed 240, acceleration 60, deceleration 95.
 - Target speed is `min(maxSpeed, sqrt(2 · deceleration · remaining))`, where `remaining` is the distance to the stop point. Signal and blocked-switch stops are 3 units short of the node; platform stops use the platform margin. Speed moves towards the target by at most `acceleration·dt` or `deceleration·dt`.
 - Movement per step is clamped to `remaining`, so a train can never pass a red signal, even at high simulation speed.
 

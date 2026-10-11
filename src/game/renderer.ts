@@ -56,6 +56,14 @@ export function platformColor(id: TrackId): number {
   return DESTINATION_COLORS[id] ?? 0x34d399;
 }
 
+/** Express trains stand out from ordinary through trains. */
+const EXPRESS_COLOR = 0x22d3ee;
+
+/** Colour of a train, its label and its queue pill. */
+export function trainColor(plan: ScheduledTrain): number {
+  return plan.express ? EXPRESS_COLOR : platformColor(plan.destination);
+}
+
 const TRACK_WIDTH = 6;
 const TRAIN_WIDTH = 12;
 const DWELL_BAR_OFFSET = 13;
@@ -389,10 +397,12 @@ export class StationRenderer {
           fontFamily: 'ui-monospace, Menlo, monospace',
           fontSize: 12,
           fontWeight: 'bold',
-          fill: platformColor(train.plan.destination),
+          fill: trainColor(train.plan),
         },
       });
-      label.anchor.set(0.5, 1);
+      // Right-aligned so the label trails over the train body and clears the signal at a
+      // platform's far end.
+      label.anchor.set(1, 1);
       this.labelLayer.addChild(label);
       this.trainLabels.set(train.id, label);
     }
@@ -408,7 +418,7 @@ export class StationRenderer {
       const points = this.trainPolyline(train);
       if (points.length < 2) continue;
       seen.add(train.id);
-      const color = platformColor(train.plan.destination);
+      const color = trainColor(train.plan);
       const [first, ...rest] = points;
       if (!first) continue;
       g.moveTo(first.x, first.y);
@@ -428,7 +438,7 @@ export class StationRenderer {
             ? ' ■'
             : '';
       label.text = `${train.id} → ${train.plan.destination} → ${train.plan.exit}${suffix}`;
-      if (head) label.position.set(head.x, head.y - 12);
+      if (head) label.position.set(Math.max(head.x, label.width + 4), head.y - 12);
       label.visible = true;
     }
     for (const [id, label] of this.trainLabels) {
@@ -553,7 +563,7 @@ export class StationRenderer {
     header.visible = true;
 
     for (const pill of shown) {
-      const color = platformColor(pill.plan.destination);
+      const color = trainColor(pill.plan);
       g.roundRect(x, pill.y - QUEUE_HEIGHT / 2, QUEUE_WIDTH, QUEUE_HEIGHT, 4).fill({
         color,
         alpha: pill.waiting ? 1 : 0.85,

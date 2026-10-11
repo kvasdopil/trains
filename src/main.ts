@@ -18,6 +18,7 @@ function createSimulation(seed: number): Simulation {
     platforms: centralStation.platforms.map((p) => p.id),
     throughTracks: centralStation.throughTracks.map((t) => t.id),
     exits: centralStation.exits.map((x) => x.id),
+    expressExit: 'S',
   });
   return new Simulation(centralStation, schedule);
 }

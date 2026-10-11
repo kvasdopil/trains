@@ -18,7 +18,7 @@ Related documents:
 
 The side panel has three states: `none` (default), `timetable`, or `log`. Two toggle buttons, `Timetable` and `Log`, sit at the right end of the floating top bar; clicking one opens that panel on the right, clicking the active one closes it, so at most one list is visible. In the `none` state no panel is shown and the buttons float over the right edge of the stage. Only the visible list is re-rendered. There is no help text in the panel.
 
-- **Timetable**: one row per scheduled train in arrival order with id, booked destination badge (platform colour, or violet `T` for a through train), booked exit (`→N` / `→S`), and status: `due mm:ss`, `waiting for entry track`, `approaching`, `held at signal`, `at Pn · Ns`, `waiting to depart`, `departing`, or the final result (`Pn/N ✓ +$100`, `Pn/S ✗ +$0`, with lateness; the amount is the train's net `earned`); a row is green only when both track and exit were right.
+- **Timetable**: one row per scheduled train in arrival order with id, booked destination badge (platform colour, violet `T` for a through train, cyan `T` for an express), booked exit (`→N` / `→S`), and status: `due mm:ss`, `waiting for entry track`, `approaching`, `held at signal`, `at Pn · Ns`, `waiting to depart`, `departing`, or the final result (`Pn/N ✓ +$100`, `Pn/S ✗ +$0`, with lateness; the amount is the train's net `earned`); a row is green only when both track and exit were right.
 - **Log**: the last eight simulation events, newest first (arrivals, stops, departures, through-line passes and wrong-track passes, exits with net money, switch changes, refused toggles, signal holds and releases). Money coin events are not logged; they appear as popups on the canvas.
 
 ## End of shift
@@ -28,3 +28,5 @@ The side panel has three states: `none` (default), `timetable`, or `log`. Two to
 ## Money popups (canvas)
 
 Each money event becomes a floating label on the canvas, animated with GSAP: green `+$10` pops off a random point along the train body and floats up as it fades (unloading, running through); red `-$2` rises from the train head (lateness); red `-$10` refund labels (missed stop, wrong exit) fly back into the station from the exit point, one after another, as the train crosses it. Popups animate in real time, independent of game speed.
+
+Express trains are drawn in cyan (`#22d3ee`) on the canvas (train, label and queue pill) and in the timetable badge, so they stand out from violet through trains.

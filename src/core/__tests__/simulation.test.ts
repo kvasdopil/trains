@@ -125,6 +125,72 @@ describe('Simulation', () => {
       expect(reasons.indexOf('wrong-exit')).toBe(10);
     });
 
+    it('pays an express triple for running through', () => {
+      const sim = new Simulation(centralStation, [throughTrain({ id: 'X123', express: true })]);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'through')).toEqual(Array<number>(10).fill(30));
+      expect(sim.money).toBe(300);
+    });
+
+    it('runs an express much faster than an ordinary through train', () => {
+      const exitTime = (plan: ScheduledTrain): number => {
+        const sim = new Simulation(centralStation, [plan]);
+        run(sim, 60, () => sim.finished);
+        return sim.trains[0]?.exitedAt ?? Infinity;
+      };
+      const express = exitTime(throughTrain({ id: 'X123', express: true }));
+      expect(express).toBeLessThan(exitTime(throughTrain()) * 0.65);
+    });
+
+    it('refunds triple when an express leaves by the wrong exit', () => {
+      const sim = new Simulation(centralStation, [
+        throughTrain({ id: 'X123', express: true, exit: 'N' }),
+      ]);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'wrong-exit')).toEqual(Array<number>(10).fill(-30));
+      expect(sim.money).toBe(0);
+    });
+
+    it('charges an express triple for every late second, with no grace', () => {
+      const sim = new Simulation(
+        centralStation,
+        [throughTrain({ id: 'X123', express: true }), throughTrain()],
+        { nominalTripSeconds: 0 },
+      );
+      // Hold both at the home signal; the deadline is their arrival time.
+      sim.toggleSignalHold('H');
+      run(sim, 5);
+      expect(
+        sim.events.flatMap((e) => (e.kind === 'money' ? [`${e.train} ${e.amount}`] : [])),
+      ).toEqual(Array<string>(5).fill('X123 -6'));
+    });
+
+    it('charges an express as soon as it has to brake for a red signal, then every second', () => {
+      const sim = new Simulation(centralStation, [throughTrain({ id: 'X123', express: true })]);
+      sim.toggleSignalHold('H');
+      const late = () => coins(sim, 'late');
+      run(sim, 30, () => late().length > 0);
+      const t = sim.trains[0];
+      // First charge lands while the express is still moving, as it starts to brake.
+      expect(t?.speed).toBeGreaterThan(0);
+      expect(late()).toEqual([-6]);
+      const charged = sim.time;
+      run(sim, 30, () => t?.speed === 0);
+      run(sim, 3);
+      expect(late().length).toBe(1 + Math.floor(sim.time - charged + 1e-9));
+      // Released: no more charges once it is running freely again.
+      sim.toggleSignalHold('H');
+      const before = late().length;
+      run(sim, 60, () => sim.finished);
+      expect(late().length).toBeLessThanOrEqual(before + 1);
+    });
+
+    it('does not charge an express that runs freely', () => {
+      const sim = new Simulation(centralStation, [throughTrain({ id: 'X123', express: true })]);
+      run(sim, 60, () => sim.finished);
+      expect(coins(sim, 'late')).toHaveLength(0);
+    });
+
     it('charges every second a train on the layout runs late beyond the grace', () => {
       const sim = new Simulation(centralStation, [train()], { nominalTripSeconds: 0 });
       // Deadline is 2 s (dwell) + 8 s grace; the train is still on its way at 15 s.

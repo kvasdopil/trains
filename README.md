@@ -17,6 +17,7 @@ Open [http://localhost:5173](http://localhost:5173).
 - Click a signal head to hold it at red (orange frame); click again to release. Hold a train's starter until its exit route through the crossover is set.
 - Red = section ahead occupied or route not set, yellow = next signal red, green = clear. Switches lock (orange) while a train occupies them or holds a route through them.
 - Through trains (violet, booked `T`) must never stop; the centre line is fastest, but any platform works at reduced speed.
+- Expresses (cyan, named like `X123`) are fast through trains that always leave South, worth triple: `$300` fare, but the moment one has to brake for a red signal it starts costing `$6` a second, and every second past its time costs the same, with no grace.
 - You earn money, shown as `+$` coming off each train: `$100` as passengers unload at the booked platform (half at a wrong one), `$100` for a through train running through. A stopping train that misses its stop, or any train leaving by the wrong exit, refunds the full `$100` fare, and a late train costs `$2` every second beyond a short grace. Space pauses; the speed button cycles 1x/2x/4x.
 
 ## Scripts

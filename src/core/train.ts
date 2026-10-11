@@ -32,6 +32,13 @@ export const DEFAULT_PHYSICS: TrainPhysics = {
   deceleration: 55,
 };
 
+/** Expresses run more than twice as fast, and accelerate and brake harder to match. */
+export const EXPRESS_PHYSICS: TrainPhysics = {
+  maxSpeed: 240,
+  acceleration: 60,
+  deceleration: 95,
+};
+
 /** Trains stop this far short of a signal or platform end. */
 export const STOP_MARGIN = 3;
 
@@ -66,6 +73,8 @@ export class Train {
   earned = 0;
   /** Whole seconds of lateness already charged. */
   lateCharged = 0;
+  /** Seconds spent braking for, or standing at, a red signal or unset route. */
+  heldSeconds = 0;
   /** Stretch of travel (head distances) over which a through train earns its fare. */
   fareRun: { start: number; length: number } | null = null;
   /** Head distance at which the train started crossing the exit point, if it owes refunds. */

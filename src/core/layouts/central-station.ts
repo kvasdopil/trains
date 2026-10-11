@@ -183,10 +183,10 @@ export const centralStation: StationLayout = {
     { id: 'T1', node: 'n_ts', fromEdge: 'e_swc_t', side: 'above' },
     { id: 'E3', node: 'n_p3s', fromEdge: 'e_swc_p3', side: 'above' },
     // Outgoing lights: protect the exit ladder.
-    { id: 'S1', node: 'n_p1e', fromEdge: 'e_p1', side: 'below' },
-    { id: 'S2', node: 'n_p2e', fromEdge: 'e_p2', side: 'below' },
-    { id: 'T2', node: 'n_te', fromEdge: 'e_t', side: 'below' },
-    { id: 'S3', node: 'n_p3e', fromEdge: 'e_p3', side: 'below' },
+    { id: 'S1', node: 'n_p1e', fromEdge: 'e_p1', side: 'above' },
+    { id: 'S2', node: 'n_p2e', fromEdge: 'e_p2', side: 'above' },
+    { id: 'T2', node: 'n_te', fromEdge: 'e_t', side: 'above' },
+    { id: 'S3', node: 'n_p3e', fromEdge: 'e_p3', side: 'above' },
     // Exit signals in front of the crossover: protect the crossover and the exit tracks.
     { id: 'O1', node: 'n_swg', fromEdge: 'e_swd_swg', side: 'above' },
     { id: 'O2', node: 'n_swj', fromEdge: 'e_swe_swj', side: 'below' },

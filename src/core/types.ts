@@ -126,4 +126,9 @@ export interface ScheduledTrain {
   length: number;
   /** Seconds the train must dwell at the platform before departing (0 for through trains). */
   dwell: number;
+  /**
+   * An express is a through train worth three times the money: its fare, refunds and late
+   * charges are tripled, and its lateness is charged from the first second, with no grace.
+   */
+  express?: boolean;
 }

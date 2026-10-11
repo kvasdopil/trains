@@ -28,6 +28,50 @@ describe('generateSchedule', () => {
     expect(a.some((t) => t.exit === 'S')).toBe(true);
   });
 
+  it('makes some through trains expresses named like X123', () => {
+    const trains = generateSchedule({
+      seed: 7,
+      count: 80,
+      platforms: ['P1', 'P2', 'P3'],
+      throughTracks: ['T'],
+      exits: ['N', 'S'],
+    });
+    const express = trains.filter((t) => t.express);
+    expect(express.length).toBeGreaterThan(0);
+    expect(express.every((t) => t.destination === 'T' && t.dwell === 0)).toBe(true);
+    expect(express.every((t) => /^X\d{3}$/.test(t.id))).toBe(true);
+    expect(trains.filter((t) => !t.express).every((t) => !t.id.startsWith('X'))).toBe(true);
+    expect(trains.some((t) => t.destination === 'T' && !t.express)).toBe(true);
+  });
+
+  it('schedules no more than two expresses per shift by default', () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const trains = generateSchedule({
+        seed,
+        count: 80,
+        platforms: ['P1', 'P2', 'P3'],
+        throughTracks: ['T'],
+        exits: ['N', 'S'],
+      });
+      expect(trains.filter((t) => t.express).length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('books every express for the express exit when one is given', () => {
+    const trains = generateSchedule({
+      seed: 7,
+      count: 80,
+      platforms: ['P1', 'P2', 'P3'],
+      throughTracks: ['T'],
+      exits: ['N', 'S'],
+      expressExit: 'S',
+    });
+    const express = trains.filter((t) => t.express);
+    expect(express.length).toBeGreaterThan(0);
+    expect(express.every((t) => t.exit === 'S')).toBe(true);
+    expect(trains.some((t) => !t.express && t.exit === 'N')).toBe(true);
+  });
+
   it('bunches arrivals so several trains overlap in the station', () => {
     const trains = generateSchedule({
       seed: 3,
